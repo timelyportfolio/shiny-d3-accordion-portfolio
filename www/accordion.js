@@ -2,6 +2,7 @@
 <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.5/jquery.min.js"></script>
 <script src="http://ajax.googleapis.com/ajax/libs/jqueryui/1.8/jquery-ui.min.js"></script>
 <script src="http://d3js.org/d3.v3.min.js"></script>
+<script src="http://documentcloud.github.com/underscore/underscore.js"></script>
 
 <style>
     .axis path, .axis line {
@@ -190,73 +191,122 @@ var networkOutputBinding = new Shiny.OutputBinding();
             };
         
             function cumulLine() {
-                var g = linesvg.selectAll("g")
-                    .data(symbols)
-                    .enter().append("g")
-                        .attr("class", "symbol");                  
-        
-                x = d3.time.scale()
-                    .domain([perfdata[0].date, perfdata[perfdata.length - 1].date])
+                var start = format.parse(perfdata[0].date);
+                var end = format.parse(perfdata[perfdata.length-1].date);
+                var range = d3.time.months(start,end);
+                
+                var x = d3.time.scale()
                     .range([0,width])
-                    
-                var y0 =  d3.max(symbols.map(function(d) { return d3.max(d.values.map(function(d) { return d.cumul; })); }));
+                    .domain(d3.extent(perfdata[0].date, function(d) { return format.parse(d); }));
                 
-                y
-                  .domain([d3.min(symbols.map(function(d) { return d3.min(d.values.map(function(d) { return d.cumul; })); })), 
-                          d3.max(symbols.map(function(d) { return d3.max(d.values.map(function(d) { return d.cumul; })); }))])
-                  .range([height, 0])
-                  .nice();
-                
+                var y = d3.scale.linear()
+                    .range([height, 0]);
+                        
                 var xAxis = d3.svg.axis()
                     .scale(x)
-                    .ticks(d3.time.years, 1)
-                    .tickSubdivide(data.length-1)
-                    .tickValues([perfdata[0].date, perfdata[perfdata.length - 1].date])
-                    .tickFormat(d3.time.format("%b %Y"));
+                    .orient("bottom");
+                
+                var yAxis = d3.svg.axis()
+                    .scale(y)
+                    .orient("left");
+                
+                var line = d3.svg.line()
+                    .interpolate("basis")
+                    .defined(function(d) { return d != null; })
+                    .x(function(d,i) { return x(range[i]); })
+                    .y(function(d) { return y(d); });                
+                
+              var values = _(perfdata).chain().pluck('cumul').flatten().value();
+            
+              y.domain([
+                0,
+                d3.max(values)
+              ]);
                     
-                var yAxis = d3.svg.axis().scale(y).orient("left");
-                
-                
-                  // Add the x-axis.
-                  linesvg.append("g")
-                      .attr("class", "x axis")
-                      .attr("transform", "translate(0," + y(1) + ")")
-                      .call(xAxis);
-                
-                  // Add the y-axis.
-                  linesvg.append("g")
-                      .attr("class", "y axis")
-                      //.attr("transform", "translate(" + width + ",0)")
-                      .call(yAxis);
-
-               var line = d3.svg.line()
-                    .x(function (d) {return x(d.date);})
-                    .y(function (d) {return y(d.cumul);});
-                
-                var g = linesvg.selectAll(".symbol");
-                
-                g.each(function(p) {
-                     d3.select(this).append("path")
-                        .attr("class", "line")
-                        .attr("d", line(p.values))
-                        .style("stroke", color(p.key));
-                    
-                      d3.select(this).append("path")
-                          .attr("class", "invisible hover")
-                          .attr("d", line(p.values));                    
-                    
-                    d3.select(this).selectAll(".dot")
-                        .data(function(d) { return d.values; })
-                      .enter().append("circle")
-                        .attr("class", "dot")
-                        .attr("cx", line.x())
-                        .attr("cy", line.y())
-                        .attr("r", 3.5)
-                        .style("fill", color(p.key));                    
+              linesvg.append("g")
+                  .attr("class", "x axis")
+                  .attr("transform", "translate(0," + height + ")")
+                  .call(xAxis);
+            
+              linesvg.append("g")
+                  .attr("class", "y axis")
+                  .call(yAxis)
+                .append("text")
+                  .attr("transform", "rotate(-90)")
+                  .attr("y", 6)
+                  .attr("dy", ".71em")
+                  .style("text-anchor", "end")
+                  .style("font-weight", "bold")
+                  .text("Cumulative Return");
+            
+              var symbol = linesvg.selectAll(".symbol")
+                  .data(symbols)
+                .enter().append("g")
+                  .attr("class", "symbol");
+            
+              symbol.append("path")
+                  .attr("class", "line")
+                  .attr("d", function(d) { return line(d.cumul); })
+                  .style("stroke", function(d,i) { return color(i); });
+            
+              symbol.append("path")
+                  .attr("class", "invisible hover")
+                  .attr("d", function(d) { return line(d.cumul); });
+            
+              var labels = perfdata.map(function(d) { return {name: d.symbol, y: y(d.cumul[d.cumul.length - 1])}});
+            
+              symbol.append("text")
+                  .attr("class", "label hover")
+                  .data(labels)
+                  .attr("transform", function(d) { return "translate(" + x(end) + "," + d.y + ")"; })
+                  .attr("x", 3)
+                  .attr("dy", ".35em")
+                  .style("fill", function(d,i) { return color(i); })
+                  .text(function(d) { return d.name; });
+            
+              // constraint relaxation on labels
+              var alpha = 0.5;
+              var spacing = 12;
+              function relax() {
+                var again = false;
+                labels.forEach(function(a,i) {
+                  labels.slice(i+1).forEach(function(b) {
+                    var dy = a.y - b.y;
+                    if (Math.abs(dy) < spacing) {
+                      again = true;
+                      var sign = dy > 0 ? 1 : -1;
+                      a.y += sign*alpha;
+                      b.y -= sign*alpha;
+                    }
+                  });
                 });
-            };      
-        
-        
+                d3.selectAll(".label")
+                  .attr("transform", function(d) { return "translate(" + x(end) + "," + d.y + ")"; });
+                if (again) setTimeout(relax,20);
+              };
+            
+              relax();
+            
+              symbol.selectAll(".hover")
+                  .on("mouseover", function(d,i) {
+                    d3.selectAll(".line")
+                      .style("opacity", 0.12)
+                      .filter(function(p) { return p.name == d.name; })
+                      .style("opacity", 1)
+                      .style("stroke-width", 2.5);
+                    d3.selectAll(".symbol text")
+                      .style("opacity", 0)
+                      .filter(function(p) { return p.name == d.name; })
+                      .style("opacity", 1);
+                  })
+                  .on("mouseout", function(d,i) {
+                    d3.selectAll(".line")
+                      .style("opacity", 1)
+                      .style("stroke-width", null);
+                    d3.selectAll(".symbol text")
+                      .style("opacity", 1);
+                  });        
+            }
         
     }
   });
