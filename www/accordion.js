@@ -177,7 +177,8 @@ var networkOutputBinding = new Shiny.OutputBinding();
                             .attr("y", function(d, i) { return y(d.perf) ; })
                             .attr("text-anchor", "middle")                        
                             .text(function(d) { return d.perf; })
-                            .style("fill-opacity", 1e-6)                    
+                            .style("fill-opacity", 1e-6)
+                            .style("font-size", "75%")
                        .transition()
                         .duration(duration)
                         .style("fill-opacity", 1);
@@ -240,11 +241,7 @@ var networkOutputBinding = new Shiny.OutputBinding();
                         .attr("class", "line")
                         .attr("d", line(p.values))
                         .style("stroke", color(p.key));
-                    
-                      d3.select(this).append("path")
-                          .attr("class", "invisible hover")
-                          .attr("d", line(p.values));                    
-                    
+
                     d3.select(this).selectAll(".dot")
                         .data(function(d) { return d.values; })
                       .enter().append("circle")
@@ -262,5 +259,4 @@ var networkOutputBinding = new Shiny.OutputBinding();
   });
   Shiny.outputBindings.register(networkOutputBinding, 'timelyportfolio.networkbinding');
 
-</script>    
-            
+</script>  
